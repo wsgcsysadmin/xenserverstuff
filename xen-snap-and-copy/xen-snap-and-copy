@@ -1,0 +1,250 @@
+#!/bin/bash
+# SVN: $Id: xen-snap-and-copy 826 2019-05-15 15:11:13Z e.meitner $
+#
+# Copyright 2019 Williamson Street Grocery Co-op
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+function usage
+{
+  echo
+  echo $0 '-v "VM NAME" -d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]'
+  echo "-v Name of VM as listed by 'xe vm-list'"
+  echo "-d Where backup gets copied"
+  echo "-m Mount this device or mountpoint beforehand. Must exist in /etc/fstab"
+  echo "-i Turn on informational output.  Use multiple times for more verbosity"
+  echo "-a Alternmate name for VM to use when creating file"
+  echo "-t Add a timestamp to the file name"
+  echo "-r Remove exiting file before copy.(Otherwise will fail). Conflict: -k"
+  echo "-k Keep previous backup by renaming it with a 'prev_' prefix. Conflict: -r"
+  echo "-n For Testing. Do not copy the snapshot. Only create and delete it"
+  echo "-l Log output to file. Turns on -i."
+  echo "-p Ping host to check for reachability. Abort if down"
+  echo "-s Scan SR of VM's VDI after backup"
+  echo
+}
+
+function runordie
+{
+  msg="$1"
+  shift
+  [ $DEBUG -ge 1 ] && logmsg $msg
+  [ $DEBUG -ge 3 ] && logmsg COMMAND: $*
+	output=`"$@" 2>&1`
+	r=$?
+	if [ $r -ne 0 ]
+	then
+	  exec 1>&2
+		logmsg "FAILED: $*"
+		logmsg "\tOutput: $output"
+		die "Command failed: $* , $output"
+	fi
+	[ $DEBUG -ge 1 ] && logmsg " OK $msg"
+	return $r
+}
+
+function die
+{
+  exec 1>&4 # stdout to original stderr
+  exec 2>&4 # stderr to original stderr
+  msg="$1"
+  exec 1>&2
+  logmsg "$1"
+  if [ $MAIL -eq 1 ] ; then
+    echo "$msg" | mail -s "xen-snap-and-copy died: $VM_NAME" root
+  fi
+  logmsg "Aborting"
+  exit 1
+}
+
+function logmsg
+{
+  echo -e `date '+%b %d %T'` $*
+}
+
+exec 4>&2
+exec 3>&1
+
+backup_prefix="BACKUP-"
+DEBUG=0
+ADD_TIMESTAMP=0
+NO_COPY=0
+REMOVE_EXISTING=0
+LOG_FILE=""
+KEEP_PREVIOUS=0
+MAIL=0
+SCAN_AFTER=0
+
+if which mail > /dev/null ; then
+  MAIL=1
+fi
+
+
+while getopts 'v:d:m:ia:tnrkl:p:' OPT
+do
+  case $OPT in
+    v)
+      VM_NAME="$OPTARG"
+    ;;
+    d)
+      DEST_DIR="$OPTARG"
+    ;;
+    m)
+      MOUNT_DEVICEDIR="$OPTARG"
+    ;;
+    i)
+      let DEBUG=$DEBUG+1
+    ;;
+    a)
+      ALT_NAME="$OPTARG"
+    ;;
+    t)
+      ADD_TIMESTAMP=1
+    ;;
+    n)
+      NO_COPY=1
+    ;;
+    r)
+      REMOVE_EXISTING=1
+    ;;
+    k)
+      KEEP_PREVIOUS=1
+    ;;
+    l)
+      LOG_FILE="$OPTARG"
+      DEBUG=10
+    ;;
+    p)
+      PING_HOST="$OPTARG"
+    ;;
+    s)
+      SCAN_AFTER=1
+    ;;
+    ?)
+      usage
+      die
+    ;;
+  esac
+done
+
+if [ -z "$VM_NAME" -o -z "$DEST_DIR" ]
+then
+  echo
+  usage
+  die " NOTE You must provide a VM name and destination directory."
+fi
+
+if [ $REMOVE_EXISTING -eq 1 -a $KEEP_PREVIOUS -eq 1  ]
+then
+  echo
+  usage
+  die ' NOTE The -k and -r options are mutually exclusive.'
+fi
+
+if [ -n "$LOG_FILE" ] ; then
+  exec >> "$LOG_FILE" 2>&1
+fi
+
+[ $DEBUG -ge 0 ] && logmsg Starting with options: $*
+
+if [ -n "$PING_HOST" ] ; then
+  if ! ping -c 5 -w 10 $PING_HOST > /dev/null 2>&1 ; then
+    die "$PING_HOST is not reachable."
+  fi
+  logmsg $PING_HOST is UP.
+fi
+
+[ -z "$ALT_NAME" ] && ALT_NAME="$VM_NAME"
+
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  if [ ! -e "$MOUNT_DEVICEDIR" ]
+  then
+    die "$MOUNT_DEVICEDIR does not exist."
+  fi
+  if ! mountpoint -q "$MOUNT_DEVICEDIR"
+  then
+    runordie "Mount destination" mount $MOUNT_DEVICEDIR
+  fi
+fi
+
+if [ ! -d "$DEST_DIR" ]
+then
+  die "DEST_DIR does not exist or is not a directory."
+fi
+
+FREE=`df -B1 --output=avail $MOUNT_DEVICEDIR |tail -1`
+if [ -f $MOUNT_DEVICEDIR/$backup_prefix${VM_NAME}.ova ] ; then
+	LASTSIZE=`stat -c'%s' $MOUNT_DEVICEDIR/$backup_prefix${VM_NAME}.ova`
+	if [ $LASTSIZE -gt $FREE ] ; then
+		die "Not enough room on disk for backup: $LASTSIZE > $FREE"
+	fi
+fi
+
+runordie "Get VM UUID" xe vm-list name-label="$VM_NAME" --minimal
+vm_uuid=$output
+[ -z "$vm_uuid" ] && die "Unable to get UUID for VM: $VM_NAME"
+[ $DEBUG -ge 2 ] && logmsg "VM UUID=$vm_uuid"
+
+runordie "Snapshoot the VM" xe vm-snapshot new-name-label="$backup_prefix$VM_NAME" uuid=$vm_uuid
+snap_uuid=$output
+[ $DEBUG -ge 2 ] && logmsg -e "Snapshot UUID=$snap_uuid"
+
+runordie "Set is-a-template=false"  xe template-param-set is-a-template=false uuid=$snap_uuid
+
+timestamp=''
+[ $ADD_TIMESTAMP -gt 0 ] && timestamp="_`date "+%Y%m%d-%H%m"`"
+
+fixed_vm_name=`echo $ALT_NAME|tr ' ' _`
+filename="$DEST_DIR/$backup_prefix${fixed_vm_name}${timestamp}.ova"
+
+if [ -f "$filename" ]
+then
+  if [  $REMOVE_EXISTING -eq 1 ]
+  then
+    runordie "Delete existing backup" rm "$filename"
+  fi
+
+  if [ $KEEP_PREVIOUS -eq 1 ]
+  then
+    runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
+  fi
+fi
+
+[ $NO_COPY -eq 0 ] && runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
+
+runordie "Delete the snapshot" xe template-uninstall template-uuid=$snap_uuid --force
+
+if [ $SCAN_AFTER -eq 1 ] ; then
+	runordie "Get VBDs for VM $vm_uuid" xe vbd-list vm-uuid=$vm_uuid empty=false --minimal
+	vbds=`echo $output |  tr , " " `
+	for vbd in `echo $vbds` ; do
+		runordie "Get VDI for VBD $vbd" xe vbd-list  params=vdi-uuid --minimal uuid=$vbd
+		vdi=$output
+		runordie "Get SR for VDI $vdi" xe vdi-list uuid=$vdi params=sr-uuid --minimal
+		sruuid=$output
+		#runordie "Filter out LVMoiSCSI SRs" xe sr-list uuid=$sruuid params=uuid  type=lvmoiscsi --minimal
+		#sruuid=$output
+		[ -z "$sruuid" ] && continue
+		runordie "Re-scan SR $sruuid" xe sr-scan uuid=$uuid
+	done
+fi
+
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  runordie "Umount destination" umount $MOUNT_DEVICEDIR
+fi
+
+[ $DEBUG -ge 0 ] && logmsg Done
