@@ -14,7 +14,7 @@ The basic process is:
 * (optional) Scan the SR to trigger garbage collection
 * Unmount volume
 
-
+````
   xen-snap-and-copy -v "VM NAME" -d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]
   -v Name of VM as listed by 'xe vm-list'
   -d Where backup gets copied
@@ -28,6 +28,7 @@ The basic process is:
   -l Log output to file. Turns on -i.
   -p Ping host to check for reachability. Abort if down
   -s Scan SR of VM's VDI after backup
+````
 
 See crontab.example for examples of how to run the script.
 
