@@ -1,0 +1,7 @@
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
+HOME=/
+
+# m h dom mon dow user	command
+15 2 * * *          root  /root/bin/backup-host -h `hostname` -d /backup/ -m /backup/ -p 10.10.10.29 -l /root/backup-host.log

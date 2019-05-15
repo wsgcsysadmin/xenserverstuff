@@ -1,0 +1,144 @@
+#!/bin/bash
+# SVN: $Id: backup-host 835 2019-05-15 15:40:43Z e.meitner $
+#
+# Copyright 2019 Williamson Street Grocery Co-op
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+function usage
+{
+  echo $0 '-h host-name -d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ]  [-l file] [-p host]'
+  echo "-h host to backup"
+  echo "-d Where backup gets copied"
+  echo "-m Mount this device or mountpoint beforehand. Must exist in /etc/fstab"
+  echo "-l Log output to file."
+  echo "-p Ping host to check for reachability. Abort if down"
+}
+
+
+function runordie
+{
+  msg="$1"
+  shift
+  [ $DEBUG -ge 1 ] && logmsg $msg
+  [ $DEBUG -ge 3 ] && logmsg COMMAND: $*
+	output=`"$@" 2>&1`
+	r=$?
+	if [ $r -ne 0 ]
+	then
+	  exec 1>&2
+		logmsg "FAILED: $*"
+		logmsg "\tOutput: $output"
+		die "Command failed: $* , $output"
+	fi
+	[ $DEBUG -ge 1 ] && logmsg " OK $msg"
+	return $r
+}
+
+function die
+{
+  exec 1>&4 # stdout to original stderr
+  exec 2>&4 # stderr to original stderr
+  msg="$1"
+  exec 1>&2
+  logmsg "$1"
+  logmsg "Aborting"
+  exit 1
+}
+
+function logmsg
+{
+  echo -e `date '+%b %d %T'` $*
+}
+
+exec 4>&2
+exec 3>&1
+
+DEBUG=0
+
+while getopts 'h:d:m:l:p:' OPT
+do
+  case $OPT in
+    h)
+      HOST="$OPTARG"
+    ;;
+    d)
+      DEST_DIR="$OPTARG"
+    ;;
+    m)
+      MOUNT_DEVICEDIR="$OPTARG"
+    ;;
+    l)
+      LOG_FILE="$OPTARG"
+      DEBUG=10
+    ;;
+    p)
+      PING_HOST="$OPTARG"
+    ;;
+    ?)
+      usage
+      die
+    ;;
+  esac
+done
+
+if [ -z "$HOST" -o -z "$DEST_DIR" ]
+then
+  echo
+  usage
+  die "** You must provide a host name and destination directory."
+fi
+
+if [ -n "$LOG_FILE" ] ; then
+  exec >> "$LOG_FILE" 2>&1
+fi
+
+[ $DEBUG -ge 0 ] && logmsg Starting with options: $*
+
+if [ -n "$PING_HOST" ] ; then
+  if ! ping -c 5 -w 10 $PING_HOST > /dev/null 2>&1 ; then
+    die "$PING_HOST is not reachable."
+  fi
+  logmsg $PING_HOST is UP.
+fi
+
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  if [ ! -e "$MOUNT_DEVICEDIR" ]
+  then
+    die "$MOUNT_DEVICEDIR does not exist."
+  fi
+  if ! mountpoint -q "$MOUNT_DEVICEDIR"
+  then
+    runordie "Mount destination" mount $MOUNT_DEVICEDIR
+  fi
+fi
+
+if [ ! -d "$DEST_DIR" ]
+then
+  die "DEST_DIR does not exist or is not a directory."
+fi
+
+if [ -f "$DEST_DIR/${HOST}_backup" ] ; then
+  runordie "Set aside previous backup" mv $DEST_DIR/${HOST}_backup $DEST_DIR/${HOST}_backup.old
+fi
+
+runordie "Back up host database" xe host-backup host=$HOST file-name=$DEST_DIR/${HOST}_backup
+
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  runordie "Umount destination" umount $MOUNT_DEVICEDIR
+fi
+
+[ $DEBUG -ge 0 ] && logmsg Done

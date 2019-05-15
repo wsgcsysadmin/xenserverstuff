@@ -1,0 +1,163 @@
+#!/bin/bash
+# SVN: $Id: backup-pool-db 833 2019-05-15 15:39:55Z e.meitner $
+#
+# Copyright 2019 Williamson Street Grocery Co-op
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+function usage
+{
+  echo
+  echo $0 '-d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ] [-i] [-l file] [-p host]'
+  echo "-d Where backup gets copied"
+  echo "-m Mount this device or mountpoint beforehand. Must exist in /etc/fstab"
+  echo "-i Turn on informational output.  Use multiple times for more verbosity"
+  echo "-l Log output to file. Turns on -i."
+  echo "-p Ping host to check for reachability. Abort if down"
+  echo
+}
+
+function runordie
+{
+  msg="$1"
+  shift
+  [ $DEBUG -ge 1 ] && logmsg $msg
+  [ $DEBUG -ge 3 ] && logmsg COMMAND: $*
+	output=`"$@" 2>&1`
+	r=$?
+	if [ $r -ne 0 ]
+	then
+	  exec 1>&2
+		logmsg "FAILED: $*"
+		logmsg "\tOutput: $output"
+		exit 1
+	fi
+	[ $DEBUG -ge 1 ] && logmsg " OK $msg"
+	return $r
+}
+
+function die
+{
+  msg="$1"
+  exec 1>&2
+  logmsg "$1"
+  logmsg "Aborting"
+  exit 1
+}
+
+function logmsg
+{
+  echo -e `date '+%b %d %T'` $*
+}
+
+DEBUG=0
+
+while getopts 'd:m:ip:l:' OPT
+do
+  case $OPT in
+    d)
+      DEST_DIR="$OPTARG"
+    ;;
+    m)
+      MOUNT_DEVICEDIR="$OPTARG"
+    ;;
+    i)
+      let DEBUG=$DEBUG+1
+    ;;
+    l)
+      LOG_FILE="$OPTARG"
+      DEBUG=10
+    ;;
+    p)
+      PING_HOST="$OPTARG"
+    ;;
+    ?)
+      usage
+      exit
+    ;;
+  esac
+done
+
+if [ -z "$DEST_DIR" ]
+then
+  exec 1>&2
+  echo "Destination directory not provided with -d option."
+  exit
+fi
+
+if [ ! -d "$DEST_DIR" ]
+then
+  exec 1>&2
+  echo "DEST_DIR does not exist or is not a directory."
+  exit
+fi
+
+if [ -n "$LOG_FILE" ] ; then
+  exec >> "$LOG_FILE" 2>&1
+fi
+
+[ $DEBUG -ge 0 ] && logmsg Starting with options: $*
+
+if [ -n "$PING_HOST" ] ; then
+  if ! ping -c 5 -w 10 $PING_HOST > /dev/null 2>&1 ; then
+    die "$PING_HOST is not reachable."
+  fi
+  logmsg $PING_HOST is UP.
+fi
+
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  if ! mountpoint -q "$MOUNT_DEVICEDIR"
+  then
+    runordie "Mount destination" mount $MOUNT_DEVICEDIR
+  fi
+fi
+
+
+if [ -f $DEST_DIR/pool-database ]
+then
+  runordie "Set aside previous backup" mv $DEST_DIR/pool-database $DEST_DIR/pool-database.prev
+fi
+
+
+runordie "Dump database" xe pool-dump-database file-name=$DEST_DIR/pool-database
+
+
+if [ -f $DEST_DIR/pool-database ]
+then
+  if [ -f $DEST_DIR/pool-database.7 ]
+  then
+    runordie "Expire oldest backup" rm $DEST_DIR/pool-database.7
+  fi
+
+  for n in {7..1}
+  do
+    let nn=$n-1
+    if [ -f $DEST_DIR/pool-database.$nn ]
+    then
+      runordie "Bump backup $nn to $n" mv $DEST_DIR/pool-database.$nn $DEST_DIR/pool-database.$n
+    fi
+  done
+  if [ -f $DEST_DIR/pool-database.prev ]
+  then
+    runordie "Rename previous backup" mv $DEST_DIR/pool-database.prev $DEST_DIR/pool-database.1
+  fi
+fi
+
+
+
+runordie "Unmount $DEST_DIR" umount $DEST_DIR
+
+[ $DEBUG -ge 0 ] && logmsg Done

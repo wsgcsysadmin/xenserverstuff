@@ -1,0 +1,7 @@
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
+HOME=/
+
+# m h dom mon dow user	command
+0 2 * * *           root  /root/bin/is_pool_master && /root/bin/backup-pool-db -d /backup/ -m /backup/ -p 10.10.10.29 -l /root/backup-pool-db.log
