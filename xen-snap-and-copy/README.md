@@ -17,6 +17,7 @@ The basic process is:
 ````
   xen-snap-and-copy -v "VM NAME" -d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]
   -v Name of VM as listed by 'xe vm-list'
+  -o Export only this disk as VHD
   -d Where backup gets copied
   -m Mount this device or mountpoint beforehand. Must exist in /etc/fstab
   -i Turn on informational output.  Use multiple times for more verbosity

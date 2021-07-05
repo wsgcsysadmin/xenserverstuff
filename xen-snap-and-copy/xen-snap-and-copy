@@ -20,8 +20,9 @@
 function usage
 {
   echo
-  echo $0 '-v "VM NAME" -d "DESTINATION DIR" [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]'
+  echo $0 '-v "VM NAME" -d "DESTINATION DIR" [-o disk name] [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]'
   echo "-v Name of VM as listed by 'xe vm-list'"
+  echo "-o Export only this disk as VHD"
   echo "-d Where backup gets copied"
   echo "-m Mount this device or mountpoint beforehand. Must exist in /etc/fstab"
   echo "-i Turn on informational output.  Use multiple times for more verbosity"
@@ -86,17 +87,21 @@ LOG_FILE=""
 KEEP_PREVIOUS=0
 MAIL=0
 SCAN_AFTER=0
+DISK_NAME=""
 
 if which mail > /dev/null ; then
   MAIL=1
 fi
 
 
-while getopts 'v:d:m:ia:tnrkl:p:' OPT
+while getopts 'v:o:d:m:ia:tnrkl:p:' OPT
 do
   case $OPT in
     v)
       VM_NAME="$OPTARG"
+    ;;
+    o)
+      DISK_NAME="$OPTARG"
     ;;
     d)
       DEST_DIR="$OPTARG"
@@ -200,7 +205,7 @@ vm_uuid=$output
 
 runordie "Snapshoot the VM" xe vm-snapshot new-name-label="$backup_prefix$VM_NAME" uuid=$vm_uuid
 snap_uuid=$output
-[ $DEBUG -ge 2 ] && logmsg -e "Snapshot UUID=$snap_uuid"
+[ $DEBUG -ge 2 ] && logmsg "Snapshot UUID=$snap_uuid"
 
 runordie "Set is-a-template=false"  xe template-param-set is-a-template=false uuid=$snap_uuid
 
@@ -208,22 +213,47 @@ timestamp=''
 [ $ADD_TIMESTAMP -gt 0 ] && timestamp="_`date "+%Y%m%d-%H%m"`"
 
 fixed_vm_name=`echo $ALT_NAME|tr ' ' _`
-filename="$DEST_DIR/$backup_prefix${fixed_vm_name}${timestamp}.ova"
 
-if [ -f "$filename" ]
+if [ -n "$DISK_NAME" ]
 then
-  if [  $REMOVE_EXISTING -eq 1 ]
+  [ $DEBUG -ge 2 ] && logmsg "Getting VDI for disk '$DISK_NAME'"
+  runordie "Get VDI UUID" xe vbd-list vm-name-label="$backup_prefix$VM_NAME" vdi-name-label="$DISK_NAME" params=vdi-uuid --minimal
+  vdi_uuid=$output
+  [ $DEBUG -ge 2 ] && logmsg "VDI UUID=$vdi_uuid"
+  fixed_disk_name=`echo $DISK_NAME|tr ' ' _`
+  filename="$DEST_DIR/$backup_prefix${fixed_vm_name}_${fixed_disk_name}${timestamp}.vdi"
+  if [ -f "$filename" ]
   then
-    runordie "Delete existing backup" rm "$filename"
+    if [  $REMOVE_EXISTING -eq 1 ]
+    then
+      runordie "Delete existing backup" rm "$filename"
+    fi
+
+    if [ $KEEP_PREVIOUS -eq 1 ]
+    then
+      runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.vdi"
+    fi
   fi
 
-  if [ $KEEP_PREVIOUS -eq 1 ]
+  [ $NO_COPY -eq 0 ] && runordie "Copy the disk image to destination" xe vdi-export uuid=$vdi_uuid filename="$filename" format=vhd
+
+else
+  filename="$DEST_DIR/$backup_prefix${fixed_vm_name}${timestamp}.ova"
+  if [ -f "$filename" ]
   then
-    runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
+    if [  $REMOVE_EXISTING -eq 1 ]
+    then
+      runordie "Delete existing backup" rm "$filename"
+    fi
+
+    if [ $KEEP_PREVIOUS -eq 1 ]
+    then
+      runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
+    fi
   fi
+
+  [ $NO_COPY -eq 0 ] && runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
 fi
-
-[ $NO_COPY -eq 0 ] && runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
 
 runordie "Delete the snapshot" xe template-uninstall template-uuid=$snap_uuid --force
 
