@@ -20,7 +20,7 @@
 function usage
 {
   echo
-  echo $0 '-v "VM NAME" -d "DESTINATION DIR" [-o disk name] [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s]'
+  echo $0 '-v "VM NAME" -d "DESTINATION DIR" [-o disk name] [ -m "MOUNT DEVICE/DIR" ] [ -i[i]... ] [-a File name] [-t] [-r] [-n] [-l file] [-p host] [-s] [-c LEVEL]'
   echo "-v Name of VM as listed by 'xe vm-list'"
   echo "-o Export only this disk as VHD"
   echo "-d Where backup gets copied"
@@ -30,6 +30,7 @@ function usage
   echo "-t Add a timestamp to the file name"
   echo "-r Remove exiting file before copy.(Otherwise will fail). Conflict: -k"
   echo "-k Keep previous backup by renaming it with a 'prev_' prefix. Conflict: -r"
+  echo "-c Compresss the exported file on the fly. Specify compression level: 0-9"
   echo "-n For Testing. Do not copy the snapshot. Only create and delete it"
   echo "-l Log output to file. Turns on -i."
   echo "-p Ping host to check for reachability. Abort if down"
@@ -88,13 +89,14 @@ KEEP_PREVIOUS=0
 MAIL=0
 SCAN_AFTER=0
 DISK_NAME=""
+COMPRESS=0
 
 if which mail > /dev/null ; then
   MAIL=1
 fi
 
 
-while getopts 'v:o:d:m:ia:tnrkl:p:' OPT
+while getopts 'v:o:d:m:ia:tnrkl:p:c:' OPT
 do
   case $OPT in
     v)
@@ -137,6 +139,9 @@ do
     s)
       SCAN_AFTER=1
     ;;
+    c)
+      COMPRESS="$OPTARG"
+    ;;
     ?)
       usage
       die
@@ -156,6 +161,13 @@ then
   echo
   usage
   die ' NOTE The -k and -r options are mutually exclusive.'
+fi
+
+if !  echo $COMPRESS| grep -q '^[0-9]$'
+then
+  echo
+  usage
+  die ' NOTE The compression level must be between 0 and 9 inclusive'
 fi
 
 if [ -n "$LOG_FILE" ] ; then
@@ -236,9 +248,19 @@ then
       runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.vdi"
     fi
   fi
-
-  [ $NO_COPY -eq 0 ] && runordie "Copy the disk image to destination" xe vdi-export uuid=$vdi_uuid filename="$filename" format=vhd
-
+  if  [ $NO_COPY -eq 0 ]
+  then
+    if [ $COMPRESS -gt 0 ]
+    then
+      # can't use pipes with runordie :/
+      [ $DEBUG -ge 1 ] && logmsg "Copy the disk image to destination, compressed"
+      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > $filename"
+      xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > "${filename}.gz"
+      runordie "Copy the disk image to destination, compressed. Checking result." exit $?
+    else
+      runordie "Copy the disk image to destination" xe vdi-export uuid=$vdi_uuid filename="$filename" format=vhd
+    fi
+  fi
 else
   filename="$DEST_DIR/$backup_prefix${fixed_vm_name}${timestamp}.ova"
   if [ -f "$filename" ]
@@ -253,8 +275,19 @@ else
       runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
     fi
   fi
-
-  [ $NO_COPY -eq 0 ] && runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
+  if  [ $NO_COPY -eq 0 ]
+  then
+    if [ $COMPRESS -gt 0 ]
+    then
+      # can't use pipes with runordie :/
+      [ $DEBUG -ge 1 ] && logmsg "Copy the snapshot to destination, compressed."
+      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > ${filename}.gz"
+      xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > "${filename}.gz"
+      runordie "Copy the snapshot to destination, compressed. Checking result." exit $?
+    else
+      runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
+    fi
+  fi
 fi
 
 runordie "Delete the snapshot" xe template-uninstall template-uuid=$snap_uuid --force
