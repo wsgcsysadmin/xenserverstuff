@@ -226,6 +226,7 @@ timestamp=''
 
 fixed_vm_name=`echo $ALT_NAME|tr ' ' _`
 
+# backup disk image only
 if [ -n "$DISK_NAME" ]
 then
   [ $DEBUG -ge 2 ] && logmsg "Getting VDI for disk '$DISK_NAME'"
@@ -236,6 +237,13 @@ then
   [ $DEBUG -ge 2 ] && logmsg "VDI UUID=$vdi_uuid"
   fixed_disk_name=`echo $DISK_NAME|tr ' ' _`
   filename="$DEST_DIR/$backup_prefix${fixed_vm_name}_${fixed_disk_name}${timestamp}.${virtual_size}.vdi"
+  backup_filename="$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.vdi"
+  if [ $COMPRESS -gt 0 ]
+  then
+    filename="${filename}.gz"
+    backup_filename="${backup_filename}.gz"
+  fi
+
   if [ -f "$filename" ]
   then
     if [  $REMOVE_EXISTING -eq 1 ]
@@ -245,7 +253,7 @@ then
 
     if [ $KEEP_PREVIOUS -eq 1 ]
     then
-      runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.vdi"
+      runordie "Rename existing backup" mv "$filename" "$backup_filename"
     fi
   fi
   if  [ $NO_COPY -eq 0 ]
@@ -255,14 +263,21 @@ then
       # can't use pipes with runordie :/
       [ $DEBUG -ge 1 ] && logmsg "Copy the disk image to destination, compressed"
       [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > $filename"
-      xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > "${filename}.gz"
+      xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > "${filename}"
       runordie "Copy the disk image to destination, compressed. Checking result." exit $?
     else
       runordie "Copy the disk image to destination" xe vdi-export uuid=$vdi_uuid filename="$filename" format=vhd
     fi
   fi
+# backup whole VM
 else
   filename="$DEST_DIR/$backup_prefix${fixed_vm_name}${timestamp}.ova"
+  backup_filename="$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
+  if [ $COMPRESS -gt 0 ]
+  then
+    filename="${filename}.gz"
+    backup_filename="${backup_filename}.gz"
+  fi
   if [ -f "$filename" ]
   then
     if [  $REMOVE_EXISTING -eq 1 ]
@@ -272,7 +287,7 @@ else
 
     if [ $KEEP_PREVIOUS -eq 1 ]
     then
-      runordie "Rename existing backup" mv "$filename" "$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.ova"
+      runordie "Rename existing backup" mv "$filename" "$backup_filename"
     fi
   fi
   if  [ $NO_COPY -eq 0 ]
@@ -281,8 +296,8 @@ else
     then
       # can't use pipes with runordie :/
       [ $DEBUG -ge 1 ] && logmsg "Copy the snapshot to destination, compressed."
-      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > ${filename}.gz"
-      xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > "${filename}.gz"
+      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > ${filename}"
+      xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > "${filename}"
       runordie "Copy the snapshot to destination, compressed. Checking result." exit $?
     else
       runordie "Copy the snapshot to destination" xe template-export template-uuid=$snap_uuid filename="$filename"
