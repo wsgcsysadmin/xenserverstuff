@@ -6,7 +6,7 @@ HOME=/
 # m h dom mon dow user	command
 30 3 * * mon        root  /root/bin/is_pool_master && /root/bin/xen-snap-and-copy -v reporting   -d /backup/ -m /backup/  -l /root/xsac.log  -k  -p 10.10.10.29
 
-30 2 * * tue        root  /root/bin/is_pool_master && /root/bin/xen-snap-and-copy -v etl-3        -d /backup/ -m /backup/  -l /root/xsac.log  -k  -p 10.10.10.29
+30 2 * * tue        root  /root/bin/is_pool_master && /root/bin/xen-snap-and-copy -c 2 -v etl-3        -d /backup/ -m /backup/  -l /root/xsac.log  -k  -p 10.10.10.29
 
 30 2 * * wed        root  /root/bin/is_pool_master && /root/bin/xen-snap-and-copy -v officescan-1 -d /backup/ -m /backup/  -l /root/xsac.log  -k  -p 10.10.10.29
 
