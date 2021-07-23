@@ -9,7 +9,7 @@ The basic process is:
 * Create snapshot of VM
 * Convert snapshot to a template
 * Remove or rename previous existing backup
-* Copy the snapshot to the volume.
+* Copy the snapshot to the volume using optional compression
 * Delete the snapshot
 * (optional) Scan the SR to trigger garbage collection
 * Unmount volume
@@ -19,12 +19,13 @@ The basic process is:
   -v Name of VM as listed by 'xe vm-list'
   -o Export only this disk as VHD
   -d Where backup gets copied
-  -m Mount this device or mountpoint beforehand. Must exist in /etc/fstab
+  -m Mount this device or mount point beforehand. Must exist in /etc/fstab
   -i Turn on informational output.  Use multiple times for more verbosity
-  -a Alternmate name for VM to use when creating file
+  -a Alternate name for VM to use when creating file
   -t Add a timestamp to the file name
   -r Remove exiting file before copy.(Otherwise will fail). Conflict: -k
   -k Keep previous backup by renaming it with a 'prev_' prefix. Conflict: -r
+  -c Compress the exported file on the fly. Specify compression level: 0-9
   -n For Testing. Do not copy the snapshot. Only create and delete it
   -l Log output to file. Turns on -i.
   -p Ping host to check for reachability. Abort if down
