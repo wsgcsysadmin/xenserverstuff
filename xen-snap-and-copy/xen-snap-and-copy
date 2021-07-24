@@ -262,7 +262,7 @@ then
     then
       # can't use pipes with runordie :/
       [ $DEBUG -ge 1 ] && logmsg "Copy the disk image to destination, compressed"
-      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > $filename"
+      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip --rsyncable -$COMPRESS > $filename"
       xe vdi-export uuid=$vdi_uuid filename= format=vhd | gzip -$COMPRESS > "${filename}"
       runordie "Copy the disk image to destination, compressed. Checking result." exit $?
     else
@@ -296,7 +296,7 @@ else
     then
       # can't use pipes with runordie :/
       [ $DEBUG -ge 1 ] && logmsg "Copy the snapshot to destination, compressed."
-      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > ${filename}"
+      [ $DEBUG -ge 3 ] && logmsg COMMAND: "xe template-export template-uuid=$snap_uuid filename= | gzip --rsyncable -$COMPRESS > ${filename}"
       xe template-export template-uuid=$snap_uuid filename= | gzip -$COMPRESS > "${filename}"
       runordie "Copy the snapshot to destination, compressed. Checking result." exit $?
     else
