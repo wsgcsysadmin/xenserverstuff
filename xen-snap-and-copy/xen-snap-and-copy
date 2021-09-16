@@ -237,7 +237,7 @@ then
   [ $DEBUG -ge 2 ] && logmsg "VDI UUID=$vdi_uuid"
   fixed_disk_name=`echo $DISK_NAME|tr ' ' _`
   filename="$DEST_DIR/$backup_prefix${fixed_vm_name}_${fixed_disk_name}${timestamp}.${virtual_size}.vdi"
-  backup_filename="$DEST_DIR/prev_$backup_prefix${fixed_vm_name}${timestamp}.vdi"
+  backup_filename="$DEST_DIR/prev_$backup_prefix${fixed_vm_name}_${fixed_disk_name}${timestamp}.${virtual_size}.vdi"
   if [ $COMPRESS -gt 0 ]
   then
     filename="${filename}.gz"
