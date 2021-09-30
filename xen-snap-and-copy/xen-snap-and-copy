@@ -89,6 +89,9 @@ MAIL=0
 SCAN_AFTER=0
 DISK_NAME=""
 COMPRESS=0
+# no command line switch for this.
+# error if umount returns error
+UMOUNT_ERROR_ABORT=0
 
 if which mail > /dev/null ; then
   MAIL=1
@@ -192,7 +195,7 @@ then
   fi
   if ! mountpoint -q "$MOUNT_DEVICEDIR"
   then
-    runordie "Mount destination" mount $MOUNT_DEVICEDIR
+    runordie "Mount destination $MOUNT_DEVICEDIR" mount $MOUNT_DEVICEDIR
   fi
 fi
 
@@ -323,7 +326,14 @@ fi
 
 if [ -n "$MOUNT_DEVICEDIR" ]
 then
-  runordie "Umount destination" umount $MOUNT_DEVICEDIR
+  echo "Umount destination $MOUNT_DEVICEDIR"
+  umount $MOUNT_DEVICEDIR
+  r=$?
+  if [ $r -ne 0 ] ; then
+    if [ "$UMOUNT_ERROR_ABORT" -eq 1 ] ; then
+      runordie "Umount destination $MOUNT_DEVICEDIR. Checking result." exit $r
+    fi
+  fi
 fi
 
 [ $DEBUG -ge 0 ] && logmsg Done
