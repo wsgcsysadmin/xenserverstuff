@@ -1,7 +1,6 @@
 #!/bin/bash
-# SVN: $Id: xen-snap-and-copy 826 2019-05-15 15:11:13Z e.meitner $
 #
-# Copyright 2019 Williamson Street Grocery Co-op
+# Copyright 2021 Williamson Street Grocery Co-op
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
