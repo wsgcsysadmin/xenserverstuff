@@ -157,7 +157,10 @@ then
 fi
 
 
+if [ -n "$MOUNT_DEVICEDIR" ]
+then
+  runordie "Unmount $DEST_DIR" umount $DEST_DIR
+fi
 
-runordie "Unmount $DEST_DIR" umount $DEST_DIR
 
 [ $DEBUG -ge 0 ] && logmsg Done
